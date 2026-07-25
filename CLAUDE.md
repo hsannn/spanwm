@@ -93,10 +93,44 @@ watermark/spanwm/
 config/SpanWM.json                            # configuration
 watermark/auto_watermark.py, auto_config.py   # "SpanWM" registered in both
 spanwm_embed.py   # [ENTRY] embed over a dataset -> jsonl (needs GPU)
-spanwm_detect.py  # [ENTRY] read jsonl -> detect + metrics (GPU optional, faster)
+spanwm_detect.py  # [ENTRY] read jsonl -> detect + metrics (same-device as embed!)
 _probe_infill.py, _probe_greenrate.py         # diagnostics (keep)
+_probe_greenrate_pos.py                       # per-window-position green rate +
+                                              #   splice-artifact counts (v6/v7)
 parser_testing/spacy_textacy_probe.py         # parser exploration tool
 ```
+
+### Versions (v4–v7) — separate modules, earlier ones never touched
+
+Each version is its own package `watermark/spanwm_vN/` (subclassing the
+previous), with its own `config/SpanWM_vN.json`, `spanwm_embed_vN.py`,
+`spanwm_detect_vN.py`, `_probe_vN.py`. History + results: `history.md`.
+
+- **v4**: base-model few-shot infilling (constituent-scale N; weaker).
+- **v5**: v3 + per-span PRF role selection (`role = PRF(master_key ‖ 16 chars
+  before the anchor)`; the n-gram lies left of the anchor so it is identical
+  at embed and detect).
+- **v6**: multi-span — up to `max_spans`=4 sites, each a `span_window_tokens`=6
+  window (v5 PRF rule per site), embed and detect share the same left→right
+  scan (`scan_sites`), green counts of all windows pooled into ONE exact
+  binomial test.
+- **v7 (current)**: v6 + **splice fixes** in `_regen_at` (detector unchanged
+  from v6):
+  1. *Drift-free left boundary*: if `left` ends with a space, generate from
+     the space-stripped context so the model emits the leading-space token
+     itself → the spliced text retokenizes into exactly the generated ids and
+     the detector recomputes the same greenlist seeds. (v6 generated after a
+     dangling `" "` token; retokenization then merged/shifted the window so
+     its tail slid off the fill — measured green rate fell from 0.75 at pos 0
+     to 0.53 at pos 5, overall 0.627.) Fallback: fill not starting with a
+     space → restore the space (old splice).
+  2. *Punctuation-aware right splice*: no separator before `,.;:!?)]}…` etc.
+     (v6 stamped `' ,'` into 133/200 watermarked texts vs 1/200 unwatermarked
+     — a regex-detectable fingerprint); a trailing-space fill is rstripped
+     when the right context supplies its own boundary (kills the double-space
+     fingerprint, 23/200 in v6); a fill that OPENS with punctuation is
+     resampled up to 3×, else attached directly without a space (that site is
+     sacrificed — natural text over fingerprint).
 
 ### Key implementation points
 - **RoleSelector**: `roles[ int.from_bytes(sha256(master_key||b"role-selection")[:8]) % len(roles) ]`. Fixed role set, **not** a mutable-candidate-list index (which shifts after regeneration). Deterministic; never Python `hash()`.
@@ -137,17 +171,20 @@ embed_span_text, embed_reconstructed_span, embed_wm_char_range`.
 
 - **Model**: `meta-llama/Llama-3.2-3B` (base, gated — the `hsannn` HF login has
   access; downloaded to cache).
-- **Env — ALWAYS conda `dlmwm`**, by path
-  `/home/sunny5574/miniconda3/envs/dlmwm/bin/python` (spaCy 3.8.14 + textacy
+- **Env — ALWAYS conda `spanwm`**, by path
+  `/home/sunny5574/miniconda3/envs/spanwm/bin/python` (spaCy 3.8.14 + textacy
   0.13.0 + `en_core_web_sm` installed there).
 - **GPU — slurm, needs `--overlap`** (an interactive job holds a step; without
   `--overlap` you get "step creation temporarily disabled … nodes busy"):
   ```bash
   srun --jobid=<JOBID> --overlap --chdir=/scratch2/sunny5574/spanwm \
-       /home/sunny5574/miniconda3/envs/dlmwm/bin/python <script> ...
+       /home/sunny5574/miniconda3/envs/spanwm/bin/python <script> ...
   ```
-  Detection runs without GPU but is much faster with one (per-token
-  `randperm(vocab)`), so run `spanwm_detect.py` under `srun` too.
+- **Detection MUST run on the same device type as embedding.** The KGW
+  greenlist is `torch.randperm(vocab, generator=rng)`, and CPU vs CUDA
+  generators produce **different sequences from the same seed** — detecting on
+  CPU what was embedded on GPU silently yields green rate ≈ γ and AUROC ≈ 0.5
+  (measured). So always run `spanwm_detect*.py` under `srun` on a GPU node.
 
 ### Workflow policy
 - **The user supplies the slurm JOBID** each session (it changes; never reuse an

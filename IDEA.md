@@ -24,9 +24,9 @@ then the detector can reconstruct the intended watermark support from the final 
 
 This avoids diluting the watermark statistic with unwatermarked tokens outside the selected span.
 
-### Empirical design constraints (learned from v1–v5)
+### Empirical design constraints (learned from v1–v7)
 
-Two constraints, discovered experimentally, now shape the method:
+Four constraints, discovered experimentally, now shape the method:
 
 1. **The watermarked region needs entropy.** A short, tightly-constrained
    constituent (e.g. an infilled object phrase) is nearly deterministic, so a
@@ -39,6 +39,21 @@ Two constraints, discovered experimentally, now shape the method:
    lengths (~2–5 tokens) are statistically too small anyway. Both sides
    therefore use "K tokens from the reconstructed anchor" (K≈20), which fixes
    N and ignores the unstable end.
+3. **N can be split across several small windows (multi-span, v6/v7).** Up to
+   4 sites × 6 tokens, found by an identical left→right keyed scan at embed
+   and detect, pooled into one exact binomial test. This spreads the quality
+   damage and adds fault tolerance (one lost site no longer kills detection),
+   at a small power cost per misaligned site.
+4. **Splice boundaries must be retokenization-stable (v7).** The criterion is
+   not "does the string look natural" but "does retokenizing the spliced text
+   reproduce exactly the generated token ids". Concretely: generate from the
+   space-stripped left context so the model emits the leading-space token
+   itself (a dangling `" "` token otherwise merges into the fill's first word
+   on re-tokenization and the fixed window's tail slides off the fill), and
+   never insert a separator before punctuation (v6's `' ,'` splices were a
+   regex-detectable watermark fingerprint: 133/200 vs 1/200). Multi-span
+   multiplies the number of splice boundaries, so per-boundary losses that
+   were tolerable at K=20 dominate at K=6.
 
 The syntactic span thus serves as a **reproducible anchor**, while the
 watermark support is the fixed-length window that starts there.
@@ -335,6 +350,11 @@ Responsibilities:
 - **Freely** generate K replacement tokens from the anchor (left-context
   continuation — constrained infilling kills the entropy the watermark needs;
   the generated window may overrun the original constituent, which is accepted).
+- Keep the splice retokenization-stable and fingerprint-free (v7): generate
+  from the space-stripped left context so the leading-space token comes from
+  the model; attach punctuation directly (no inserted separator before it);
+  drop a fill's dangling trailing space when the right context supplies the
+  boundary.
 - Apply watermarking only while generating those K tokens.
 - Verify reconstructability (re-parse; same key must land on the same anchor)
   and retry the generation a few times if it fails.

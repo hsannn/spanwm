@@ -26,7 +26,8 @@ from watermark.auto_config import AutoConfig
 
 WATERMARK_MAPPING_NAMES = {
     'KGW': 'watermark.kgw.KGW',
-    "SpanWM": "watermark.spanwm.SpanWM"
+    "SpanWM": "watermark.spanwm.SpanWM",
+    'SWEET': 'watermark.sweet.SWEET'
 }
 
 

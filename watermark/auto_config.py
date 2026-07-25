@@ -25,7 +25,8 @@ from utils.transformers_config import TransformersConfig
 
 CONFIG_MAPPING_NAMES = {
     'KGW': 'watermark.kgw.KGWConfig',
-    "SpanWM": "watermark.spanwm.SpanWMConfig"
+    "SpanWM": "watermark.spanwm.SpanWMConfig",
+    'SWEET': 'watermark.sweet.SWEETConfig'
 }
 
 
