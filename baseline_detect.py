@@ -46,7 +46,7 @@ FLOOR_SCORE = -1.0
 DEFAULT_CONFIGS = {
     "KGW": "config/KGW_g0.25_d4.0.json",
     "SynthID": "config/SynthID.json",
-    "SpARKP": "config/SpARKP_verb.json",
+    "SpARKP": "config/SpARKP.json",
     "SpARKR": "config/SpARKR.json",
     "LemmaWM": "config/LemmaWM.json",
     "LemmaWMS": "config/LemmaWMS_k2.json",
@@ -55,7 +55,7 @@ DEFAULT_CONFIGS = {
     "SWEET": "config/SWEET_g0.25_d4.0_t0.9.json",
     "EWD": "config/EWD_g0.25_d4.0.json",
     "Adaptive": "config/Adaptive.json",
-    "IE": "config/IE_t2.2.json",
+    "IE": "config/IE.json",
     "PivotWM": "config/PivotWM.json",
     "SpanCode": "config/SpanCode.json",
 }

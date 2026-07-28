@@ -1,0 +1,9 @@
+{
+    "algorithm_name": "SpARKR",
+    "gamma": 0.1,
+    "modular": 6,
+    "hash_key": 15485863,
+    "greenlist_seed": 0,
+    "z_threshold": 4.0,
+    "_comment": "Paper-faithful SpARK-R: hard resampling from a fixed global green list at trigger positions (hash(token id) %% modular == 0). bl_type defaults to 'hard'. See SpARKR_softfix.json for the position-fixed soft variant."
+}

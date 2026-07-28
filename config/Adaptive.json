@@ -16,5 +16,6 @@
     "measurement_model": "gpt2-large",
     "embedding_model": "sentence-transformers/all-mpnet-base-v2",
     "transform_model_path": "watermark/adaptive/model/semantic_mapping_model.pth",
-    "transform_model_output_dim": 384
+    "transform_model_output_dim": 384,
+    "_comment": "delta is MULTIPLICATIVE (logits*(1+delta*v)) so it does not transfer across base models \u2014 the paper uses 1.5 for OPT-6.7B and 0.6 for Mistral-7B. 1.5 is what we measured on Llama-3.2-3B."
 }
