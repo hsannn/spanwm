@@ -28,8 +28,8 @@ class Watermark():
                  
                 device:torch.device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
                 model_path:str=None,
-                semantic_model_path:str="/data3/wcr/my_lab/hf_models/simcse-roberta-base",
-                checkpoint_path:str="/data3/wcr/my_project/selective_watermark_based_on_semantic/ckpt/selective_network_init1.pth",
+                semantic_model_path:str="princeton-nlp/sup-simcse-roberta-base",
+                checkpoint_path:str="watermark/ltw/selective_network_epoch0_step2000.pth",
                 top_k = 100,
                 top_p= 0.95,
                 repetition_penalty = 1,

@@ -35,9 +35,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from evaluation.dataset import C4Dataset
 from watermark.ltw.watermark import Detector, Watermark
 
-SEMANTIC_MODEL = "princeton-nlp/sup-simcse-roberta-base"
-CHECKPOINT = "watermark/ltw/selective_network_epoch0_step2000.pth"
 FLOOR_SCORE = -1.0
+DEFAULT_CONFIG = "config/LTW.json"
 
 
 def p_to_score(p):
@@ -54,11 +53,13 @@ def tpr_at_fpr(labels, scores, target_fpr):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--variant", choices=["ltw1", "ltw0"], required=True)
+    ap.add_argument("--config", default=DEFAULT_CONFIG)
+    # CLI values override the config file; leaving them unset uses the config.
+    ap.add_argument("--variant", choices=["ltw1", "ltw0"], default=None)
     ap.add_argument("--num_samples", type=int, default=200)
-    ap.add_argument("--gamma", type=float, default=0.25)
-    ap.add_argument("--delta", type=float, default=3.0)
-    ap.add_argument("--max_new_tokens", type=int, default=200)
+    ap.add_argument("--gamma", type=float, default=None)
+    ap.add_argument("--delta", type=float, default=None)
+    ap.add_argument("--max_new_tokens", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--output", default=None)
     ap.add_argument("--skip_generate", action="store_true")
@@ -66,9 +67,20 @@ def main() -> None:
                     help="overwrite an existing output file")
     args = ap.parse_args()
 
+    with open(args.config) as f:
+        cfg = json.load(f)
+    variant = args.variant or cfg["variant"]
+    gamma = args.gamma if args.gamma is not None else float(cfg["gamma"])
+    delta = args.delta if args.delta is not None else float(cfg["delta"])
+    max_new = args.max_new_tokens or int(cfg["max_new_tokens"])
+    k_ctx = int(cfg["k"])          # selector context window: generation == detection
+    semantic_model = cfg["semantic_model"]
+    checkpoint = cfg["checkpoint"]
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    out = args.output or f"outputs/{args.variant}_c4_n{args.num_samples}.jsonl"
-    unigram = args.variant == "ltw0"
+    tag = cfg.get("output_tag") if args.variant is None else variant
+    out = args.output or f"outputs/{tag or variant}_c4_n{args.num_samples}.jsonl"
+    unigram = variant == "ltw0"
     torch.manual_seed(args.seed)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -77,8 +89,9 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto").to(device)
     model.eval()
     vocab_size = model.config.vocab_size
-    print(f"variant={args.variant} unigram={unigram} gamma={args.gamma} "
-          f"delta={args.delta} vocab={vocab_size} device={device}", flush=True)
+    print(f"variant={variant} unigram={unigram} gamma={gamma} delta={delta} "
+          f"k={k_ctx} vocab={vocab_size} device={device} config={args.config}",
+          flush=True)
 
     ds = C4Dataset("dataset/c4/processed_c4.json", max_samples=args.num_samples)
     n = min(args.num_samples, ds.prompt_nums)
@@ -88,15 +101,18 @@ def main() -> None:
         if os.path.exists(out) and not args.force:
             raise SystemExit(f"refusing to overwrite {out} — pass --output or --force")
         wm = Watermark(device=torch.device(device), model=model, tokenizer=tokenizer,
-                       semantic_model_path=SEMANTIC_MODEL, checkpoint_path=CHECKPOINT,
-                       top_k=100, top_p=0.95, repetition_penalty=1,
-                       no_repeat_ngram_size=8, max_new_tokens=args.max_new_tokens,
-                       min_new_tokens=175, k=6, embed_unigram_wm=unigram)
+                       semantic_model_path=semantic_model, checkpoint_path=checkpoint,
+                       top_k=int(cfg["top_k"]), top_p=float(cfg["top_p"]),
+                       repetition_penalty=cfg["repetition_penalty"],
+                       no_repeat_ngram_size=int(cfg["no_repeat_ngram_size"]),
+                       max_new_tokens=max_new,
+                       min_new_tokens=int(cfg["min_new_tokens"]),
+                       k=k_ctx, embed_unigram_wm=unigram)
         with open(out, "w") as f:
             for i in range(n):
                 prompt = ds.get_prompt(i)
                 natural = ds.get_natural_text(i) if ds.natural_text_nums > i else ""
-                wm_gen = wm.generate_watermark(prompt, args.gamma, args.delta)[0]
+                wm_gen = wm.generate_watermark(prompt, gamma, delta)[0]
                 un_gen = wm.generate_unwatermark(prompt)[0]
                 rec = {"index": i, "prompt": prompt,
                        "watermarked_text": prompt + wm_gen,
@@ -111,10 +127,12 @@ def main() -> None:
         print(f"wrote {n} records -> {out}", flush=True)
 
     # ---------------- detection ----------------
-    det = Detector(vocab=list(range(vocab_size)), gamma=args.gamma, delta=args.delta,
+    det = Detector(vocab=list(range(vocab_size)), gamma=gamma, delta=delta,
                    seeding_scheme="simple_1", tokenizer=tokenizer, model=model,
-                   checkpoint_path=CHECKPOINT, semantic_model_path=SEMANTIC_MODEL,
-                   z_threshold=4.0, k=6, embed_unigram_wm=unigram)
+                   checkpoint_path=checkpoint, semantic_model_path=semantic_model,
+                   z_threshold=float(cfg["z_threshold"]),
+                   k=k_ctx,                       # same window as generation
+                   embed_unigram_wm=unigram)
 
     recs = [json.loads(l) for l in open(out)]
 
@@ -136,7 +154,7 @@ def main() -> None:
         if n_sc < 1:
             return {"z": -100.0, "p": 1.0, "n": 0, "green": 0, "green_frac": 0.0,
                     "wm_frac": 0.0}
-        return {"z": float(r["z_score"]), "p": float(binom.sf(g - 1, n_sc, args.gamma)),
+        return {"z": float(r["z_score"]), "p": float(binom.sf(g - 1, n_sc, gamma)),
                 "n": n_sc, "green": g, "green_frac": g / n_sc,
                 "wm_frac": float(r.get("watermarking_fraction", 0.0))}
 
@@ -158,7 +176,7 @@ def main() -> None:
         sc = [p_to_score(s["p"]) for s in pos] + [p_to_score(s["p"]) for s in neg]
         fpr, tpr, _ = roc_curve(y, sc)
         auroc = float(np.trapezoid(tpr, fpr)) if hasattr(np, "trapezoid") else float(np.trapz(tpr, fpr))
-        print(f"\nsamples         : {len(pos)}   negative class: {neg_name}   variant: {args.variant}")
+        print(f"\nsamples         : {len(pos)}   negative class: {neg_name}   variant: {variant}")
         print(f"tokens scored   : pos mean {np.mean([s['n'] for s in pos]):.1f}   "
               f"green_frac pos {np.mean([s['green_frac'] for s in pos]):.3f} "
               f"neg {np.mean([s['green_frac'] for s in neg]):.3f}   "

@@ -1,0 +1,18 @@
+{
+    "algorithm_name": "LTW",
+    "variant": "ltw1",
+    "gamma": 0.25,
+    "delta": 3.0,
+    "k": 6,
+    "top_k": 100,
+    "top_p": 0.95,
+    "repetition_penalty": 1,
+    "no_repeat_ngram_size": 8,
+    "max_new_tokens": 200,
+    "min_new_tokens": 175,
+    "z_threshold": 4.0,
+    "semantic_model": "princeton-nlp/sup-simcse-roberta-base",
+    "checkpoint": "watermark/ltw/selective_network_epoch0_step2000.pth",
+    "output_tag": "ltw1",
+    "_comment": "variant: ltw1 = KGW-style context-hashed green list, ltw0 = unigram (fixed) green list -- the paper's more paraphrase-robust arm. k is the selector's context window and MUST be identical at generation and detection (the Detector class's own default is 10, which would replay a different gating decision than generation made). Sampling params are LTW's own loop, not the shared protocol, so its PPL is only comparable to its paired unwatermarked text. Set output_tag when sweeping gamma/delta so runs do not collide."
+}

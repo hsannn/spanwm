@@ -86,10 +86,10 @@ class WatermarkDetector(WatermarkBase):
         *args,
         tokenizer: None,
         model:AutoModelForCausalLM,
-        checkpoint_path: str = "/data3/wcr/my_project/selective_watermark_based_on_semantic/ckpt/selective_network_init1.pth",
-        semantic_model_path:str='/data3/wcr/my_lab/hf_models/simcse-roberta-base',
+        checkpoint_path: str = "watermark/ltw/selective_network_epoch0_step2000.pth",
+        semantic_model_path:str='princeton-nlp/sup-simcse-roberta-base',
         z_threshold: float = 4.0,
-        k:int=10,
+        k:int=6,   # MUST match generation (config/LTW.json)
         embed_unigram_wm=False,
         # normalizers: list[str] = ["unicode"],  # or also: ["unicode", "homoglyphs", "truecase"]
         ignore_repeated_bigrams: bool = False,
