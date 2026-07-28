@@ -62,6 +62,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--output", default=None)
     ap.add_argument("--skip_generate", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing output file")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,6 +84,9 @@ def main() -> None:
     n = min(args.num_samples, ds.prompt_nums)
 
     if not args.skip_generate:
+        import os
+        if os.path.exists(out) and not args.force:
+            raise SystemExit(f"refusing to overwrite {out} — pass --output or --force")
         wm = Watermark(device=torch.device(device), model=model, tokenizer=tokenizer,
                        semantic_model_path=SEMANTIC_MODEL, checkpoint_path=CHECKPOINT,
                        top_k=100, top_p=0.95, repetition_penalty=1,

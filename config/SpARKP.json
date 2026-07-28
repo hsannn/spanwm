@@ -1,0 +1,12 @@
+{
+    "algorithm_name": "SpARKP",
+    "gamma": 0.05,
+    "delta": 10.0,
+    "bl_type": "hard",
+    "pos_tags": [
+        "V"
+    ],
+    "seeding_scheme": "lefthash",
+    "z_threshold": 4.0,
+    "_comment": "pos_tags is the trigger word-class list (NLTK Penn tags, prefix match): ['V'] verbs, ['NN'] nouns, ['DT'] determiners. Paper-faithful default is verbs."
+}

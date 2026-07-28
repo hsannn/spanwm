@@ -41,7 +41,7 @@ DATASETS = {"c4": (C4Dataset, "dataset/c4/processed_c4.json")}
 DEFAULT_CONFIGS = {
     "KGW": "config/KGW_g0.25_d4.0.json",
     "SynthID": "config/SynthID.json",
-    "SpARKP": "config/SpARKP_verb.json",
+    "SpARKP": "config/SpARKP.json",
     "SpARKR": "config/SpARKR.json",
     "LemmaWM": "config/LemmaWM.json",
     "LemmaWMS": "config/LemmaWMS_k2.json",
@@ -50,7 +50,7 @@ DEFAULT_CONFIGS = {
     "SWEET": "config/SWEET_g0.25_d4.0_t0.9.json",
     "EWD": "config/EWD_g0.25_d4.0.json",
     "Adaptive": "config/Adaptive.json",
-    "IE": "config/IE_t2.2.json",
+    "IE": "config/IE.json",
     "PivotWM": "config/PivotWM.json",
     "SpanCode": "config/SpanCode.json",
 }
@@ -71,13 +71,35 @@ def main() -> None:
     ap.add_argument("--model", default=MODEL_ID)
     ap.add_argument("--config", default=None)
     ap.add_argument("--output", default=None)
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing output file")
     ap.add_argument("--max_new_tokens", type=int, default=200)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
     config_path = args.config or DEFAULT_CONFIGS[args.algorithm]
-    output = args.output or f"outputs/{args.algorithm.lower()}_{args.dataset}_n{args.num_samples}.jsonl"
+    # Output name, in precedence order:
+    #   1. --output                     explicit, wins over everything
+    #   2. "output_tag" in the config    set this when sweeping a value INSIDE
+    #                                    one config file (e.g. IE's tau), since
+    #                                    the file name alone cannot distinguish
+    #                                    those runs
+    #   3. the config file stem          distinguishes different config FILES
+    #                                    of the same algorithm (SpARKR.json vs
+    #                                    SpARKR_softfix.json), which naming by
+    #                                    algorithm alone did not
+    with open(config_path) as _f:
+        tag = json.load(_f).get("output_tag")
+    stem = tag or os.path.splitext(os.path.basename(config_path))[0]
+    output = args.output or f"outputs/{stem.lower()}_{args.dataset}_n{args.num_samples}.jsonl"
     os.makedirs(os.path.dirname(output), exist_ok=True)
+    # Last line of defence: never silently replace a corpus that cost GPU-hours.
+    if os.path.exists(output) and not args.force:
+        raise SystemExit(
+            f"refusing to overwrite {output}\n"
+            f"  set \"output_tag\" in {config_path} (or pass --output) to give "
+            f"this run its own file,\n"
+            f"  or pass --force to overwrite")
 
     torch.manual_seed(args.seed)
 

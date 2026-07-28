@@ -1,0 +1,11 @@
+{
+    "algorithm_name": "SpARKR",
+    "gamma": 0.25,
+    "modular": 6,
+    "delta": 4.0,
+    "bl_type": "soft_fixed",
+    "hash_key": 15485863,
+    "greenlist_seed": 0,
+    "z_threshold": 4.0,
+    "_comment": "Position-fixed soft variant: triggers are decided on an unbiased sample (removing the selection effect a global bias creates), then a red trigger is resampled WITHIN the trigger table with +delta preference for green."
+}
