@@ -1,0 +1,22 @@
+{
+    "algorithm_name": "Adaptive",
+    "max_new_tokens": 230,
+    "min_new_tokens": 200,
+    "threshold": 0.8,
+    "alpha": 2.0,
+    "top_k": 50,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "no_repeat_ngram_size": 0,
+    "secret_string": "The quick brown fox jumps over the lazy dog",
+    "measure_threshold": 50,
+    "delta_0": 1.0,
+    "delta": 1.5,
+    "seed": 66,
+    "measurement_model": "gpt2-large",
+    "embedding_model": "sentence-transformers/all-mpnet-base-v2",
+    "transform_model_path": "watermark/adaptive/model/semantic_mapping_model.pth",
+    "transform_model_output_dim": 384,
+    "_comment": "delta is MULTIPLICATIVE (logits*(1+delta*v)) so it does not transfer across base models \u2014 the paper uses 1.5 for OPT-6.7B and 0.6 for Mistral-7B. 1.5 is what we measured on Llama-3.2-3B. Set \"output_tag\" (e.g. adaptive_d0.6) when you change delta, so each run writes its own corpus.",
+    "output_tag": "adaptive_d1.5"
+}
