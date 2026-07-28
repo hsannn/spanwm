@@ -24,8 +24,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 PYTHON=/home/ssgyejin/miniconda3/envs/spanwm/bin/python
-ALGORITHM=SWEET
-CONFIG=config/SWEET.json
+ALGORITHM=LTW
+CONFIG=config/LTW.json
 COLUMN=attacked_text
 # The attack was applied to the FULL watermarked_text (prompt included), so the
 # attacked text no longer starts with the prompt and char-stripping would fall
@@ -34,7 +34,7 @@ COLUMN=attacked_text
 TRUNCATION=none
 NEGATIVE="${NEGATIVE:-unwatermarked}"
 
-IN_DIR=outputs/attacked/sweet
+IN_DIR=outputs/attacked/ltw
 LOG_DIR="$IN_DIR/logs"
 
 # ---- get onto a GPU ---------------------------------------------------------

@@ -114,7 +114,16 @@ previous), with its own `config/SpanWM_vN.json`, `spanwm_embed_vN.py`,
   window (v5 PRF rule per site), embed and detect share the same left→right
   scan (`scan_sites`), green counts of all windows pooled into ONE exact
   binomial test.
-- **v7 (current)**: v6 + **splice fixes** in `_regen_at` (detector unchanged
+- **v8 (current)**: v7 + **two-role anchor PRF**. The per-span PRF now indexes
+  the fixed list of `roles_per_anchor`-subsets of `roles` (default k=2, so 3
+  pairs out of SUBJECT/OBJECT/PREDICATE) and a span is a site if its role is
+  **in** that subset — v5–v7 required equality with a single role. ~2/3 of
+  parsed spans become role-eligible instead of ~1/3, so the left→right scan
+  reaches `max_spans` sites in more drafts (larger pooled N). Same key material
+  and same left-of-anchor n-gram, so the embed/detect invariant is unchanged;
+  `roles_per_anchor: 1` reproduces v7's selection byte-for-byte (verified).
+  Splicing and the pooled binomial detector are inherited from v7 untouched.
+- **v7**: v6 + **splice fixes** in `_regen_at` (detector unchanged
   from v6):
   1. *Drift-free left boundary*: if `left` ends with a space, generate from
      the space-stripped context so the model emits the leading-space token
