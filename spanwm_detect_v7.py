@@ -38,6 +38,7 @@ def tpr_at_fpr(labels, scores, target_fpr):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
+    ap.add_argument("--column", default="watermarked_text")
     ap.add_argument("--model", default=MODEL_ID)
     ap.add_argument("--config", default="config/SpanWM_v7.json")
     ap.add_argument("--negative", default="unwatermarked", choices=["unwatermarked", "natural"])
@@ -63,7 +64,7 @@ def main() -> None:
     pos_sites, neg_sites = [], []
     n_neg = 0
     for r in records:
-        z, p, s = detect(r["watermarked_text"]); pos_z.append(z); pos_p.append(p); pos_sites.append(s)
+        z, p, s = detect(r[args.column]); pos_z.append(z); pos_p.append(p); pos_sites.append(s)
         neg_text = r.get(neg_key, "")
         if neg_text:
             n_neg += 1
