@@ -78,20 +78,27 @@ def main() -> None:
     args = ap.parse_args()
 
     config_path = args.config or DEFAULT_CONFIGS[args.algorithm]
-    # Name the output after the CONFIG, not the algorithm: several configs of
-    # the same algorithm (e.g. SpARKR.json vs SpARKR_softfix.json) would
-    # otherwise write to the same file and silently overwrite each other.
-    cfg_stem = os.path.splitext(os.path.basename(config_path))[0].lower()
-    output = args.output or f"outputs/{cfg_stem}_{args.dataset}_n{args.num_samples}.jsonl"
+    # Output name, in precedence order:
+    #   1. --output                     explicit, wins over everything
+    #   2. "output_tag" in the config    set this when sweeping a value INSIDE
+    #                                    one config file (e.g. IE's tau), since
+    #                                    the file name alone cannot distinguish
+    #                                    those runs
+    #   3. the config file stem          distinguishes different config FILES
+    #                                    of the same algorithm (SpARKR.json vs
+    #                                    SpARKR_softfix.json), which naming by
+    #                                    algorithm alone did not
+    with open(config_path) as _f:
+        tag = json.load(_f).get("output_tag")
+    stem = tag or os.path.splitext(os.path.basename(config_path))[0]
+    output = args.output or f"outputs/{stem.lower()}_{args.dataset}_n{args.num_samples}.jsonl"
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    # A value swept INSIDE one config file (e.g. IE's entropy_threshold) does
-    # not change the config name, so refuse to clobber instead of silently
-    # replacing a corpus that took GPU-hours to make.
+    # Last line of defence: never silently replace a corpus that cost GPU-hours.
     if os.path.exists(output) and not args.force:
         raise SystemExit(
             f"refusing to overwrite {output}\n"
-            f"  sweeping a value inside {config_path}? pass an explicit "
-            f"--output outputs/<name>_{args.dataset}_n{args.num_samples}.jsonl\n"
+            f"  set \"output_tag\" in {config_path} (or pass --output) to give "
+            f"this run its own file,\n"
             f"  or pass --force to overwrite")
 
     torch.manual_seed(args.seed)
