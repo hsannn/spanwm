@@ -291,6 +291,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--algorithm", required=True, choices=list(DEFAULT_CONFIGS))
+    ap.add_argument("--column", default="watermarked_text",
+                    help="positive-class field (use attacked_text on outputs/attacked/*)")
     ap.add_argument("--model", default=MODEL_ID)
     ap.add_argument("--config", default=None)
     ap.add_argument("--negative", default="unwatermarked", choices=["unwatermarked", "natural"])
@@ -335,7 +337,7 @@ def main() -> None:
     pos_res, neg_res = [], []
     n_neg = 0
     for r in records:
-        pos_text = strip_prompt(r["watermarked_text"], r["prompt"], args.truncation)
+        pos_text = strip_prompt(r[args.column], r["prompt"], args.truncation)
         pos_res.append(scorer.score(pos_text) if pos_text else None)
 
         neg_text = r.get(neg_key, "")
@@ -359,7 +361,8 @@ def main() -> None:
     print("=" * 66)
     print(f"input           : {args.input}")
     print(f"algorithm       : {args.algorithm}   config: {config_path}")
-    print(f"samples         : {len(records)}   negative class: {args.negative}   truncation: {args.truncation}")
+    print(f"samples         : {len(records)}   positive: {args.column}   "
+          f"negative class: {args.negative}   truncation: {args.truncation}")
     print(f"scorable        : pos {len(pos_ok)}/{len(pos_res)}   neg {len(neg_ok)}/{n_neg}")
     if args.algorithm in ("KGW", "SpARKP", "SpARKR", "LemmaWM", "LemmaWMS", "ClusterWM", "SentClusterWM", "SWEET", "EWD", "SpanCode", "Adaptive", "IE", "PivotWM"):
         print(f"tokens scored   : pos mean {np.mean([x['n'] for x in pos_ok]):.1f}   "
@@ -404,10 +407,13 @@ def main() -> None:
         print(f"AUROC (rank by z): {roc_auc_score(labels, raw):.4f}   [secondary]")
     print("=" * 66)
 
-    scores_out = args.scores_out or f"{os.path.splitext(args.input)[0]}.{args.negative}.scores.json"
+    tag = "" if args.column == "watermarked_text" else f".{args.column}"
+    scores_out = args.scores_out or \
+        f"{os.path.splitext(args.input)[0]}{tag}.{args.negative}.scores.json"
     with open(scores_out, "w") as f:
         json.dump({
             "input": args.input, "algorithm": args.algorithm, "config": config_path,
+            "column": args.column,
             "negative": args.negative, "truncation": args.truncation,
             "pos": pos_res, "neg": neg_res,
         }, f, indent=1)

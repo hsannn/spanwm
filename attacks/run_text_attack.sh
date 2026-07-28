@@ -15,23 +15,24 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # nltk / wordnet live in the `spanwm` conda env -- call it by path
 PYTHON=/home/ssgyejin/miniconda3/envs/spanwm/bin/python
 
-# fixed ratios (10~50%) + random ratio per sample (10~50%)
+input_file="/home/ssgyejin/contents/spanwm/outputs/sweet_c4_n200.jsonl"
+output_dir="outputs/attacked/sweet"
+
+
 $PYTHON attacks/text_attack.py \
-    --input "outputs/spanwm_v7_c4_n200.jsonl" \
-    --output_dir "outputs/attacked" \
+    --input "$input_file" \
+    --output_dir "$output_dir" \
     --attacks WordDeletion SynonymSubstitution \
-    --mode random \
-    --ratio_range 0.1 0.5 \
+    --mode fixed \
+    --ratios 0.1 0.2 0.3 0.4 0.5 \
     --field watermarked_text \
     --seed 42
 
-# --- variants -----------------------------------------------------------
-# random ratio only
-# $PYTHON attacks/text_attack.py \
-#     --input "outputs/spanwm_v7_c4_n200.jsonl" \
-#     --output_dir "outputs/attacked" \
-#     --mode both \
-#     --ratios 0.1 0.2 0.3 0.4 0.5 \
-#     --ratio_range 0.1 0.5 \
-#     --seed 42
-#
+# paraphrasing attack -- OpenAI API, needs OPENAI_API_KEY in ./.env (costs money)
+$PYTHON attacks/paraphrasing_attack.py \
+    --input "$input_file" \
+    --output_dir "$output_dir" \
+    --field watermarked_text \
+    --model gpt-5-mini \
+    --reasoning_effort low \
+    --workers 8
