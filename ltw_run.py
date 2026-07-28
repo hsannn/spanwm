@@ -78,7 +78,10 @@ def main() -> None:
     checkpoint = cfg["checkpoint"]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tag = cfg.get("output_tag") if args.variant is None else variant
+    # the variant always drives the default name; output_tag is an optional
+    # override for sweeping gamma/delta WITHIN a variant (otherwise editing
+    # "variant" in the config would write under the other variant's name)
+    tag = cfg.get("output_tag") or variant
     out = args.output or f"outputs/{tag or variant}_c4_n{args.num_samples}.jsonl"
     unigram = variant == "ltw0"
     torch.manual_seed(args.seed)

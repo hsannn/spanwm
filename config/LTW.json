@@ -13,6 +13,5 @@
     "z_threshold": 4.0,
     "semantic_model": "princeton-nlp/sup-simcse-roberta-base",
     "checkpoint": "watermark/ltw/selective_network_epoch0_step2000.pth",
-    "output_tag": "ltw1",
-    "_comment": "variant: ltw1 = KGW-style context-hashed green list, ltw0 = unigram (fixed) green list -- the paper's more paraphrase-robust arm. k is the selector's context window and MUST be identical at generation and detection (the Detector class's own default is 10, which would replay a different gating decision than generation made). Sampling params are LTW's own loop, not the shared protocol, so its PPL is only comparable to its paired unwatermarked text. Set output_tag when sweeping gamma/delta so runs do not collide."
+    "_comment": "variant: ltw1 = KGW-style context-hashed green list (seeded by the previous token), ltw0 = unigram/fixed global green list -- the paper's more paraphrase-robust arm. Set it here or override with --variant; the output file is named after it automatically. k is the selector's context window and MUST be identical at generation and detection (the Detector class default was 10, which would replay a different gating decision than generation made). Sampling params are LTW's own loop, not the shared protocol, so its PPL is only comparable to its paired unwatermarked text. Add an \"output_tag\" ONLY when sweeping gamma/delta within one variant."
 }
