@@ -71,13 +71,28 @@ def main() -> None:
     ap.add_argument("--model", default=MODEL_ID)
     ap.add_argument("--config", default=None)
     ap.add_argument("--output", default=None)
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing output file")
     ap.add_argument("--max_new_tokens", type=int, default=200)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
     config_path = args.config or DEFAULT_CONFIGS[args.algorithm]
-    output = args.output or f"outputs/{args.algorithm.lower()}_{args.dataset}_n{args.num_samples}.jsonl"
+    # Name the output after the CONFIG, not the algorithm: several configs of
+    # the same algorithm (e.g. SpARKR.json vs SpARKR_softfix.json) would
+    # otherwise write to the same file and silently overwrite each other.
+    cfg_stem = os.path.splitext(os.path.basename(config_path))[0].lower()
+    output = args.output or f"outputs/{cfg_stem}_{args.dataset}_n{args.num_samples}.jsonl"
     os.makedirs(os.path.dirname(output), exist_ok=True)
+    # A value swept INSIDE one config file (e.g. IE's entropy_threshold) does
+    # not change the config name, so refuse to clobber instead of silently
+    # replacing a corpus that took GPU-hours to make.
+    if os.path.exists(output) and not args.force:
+        raise SystemExit(
+            f"refusing to overwrite {output}\n"
+            f"  sweeping a value inside {config_path}? pass an explicit "
+            f"--output outputs/<name>_{args.dataset}_n{args.num_samples}.jsonl\n"
+            f"  or pass --force to overwrite")
 
     torch.manual_seed(args.seed)
 
