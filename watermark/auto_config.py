@@ -24,6 +24,9 @@ from typing import Dict, Optional, Any
 from utils.transformers_config import TransformersConfig
 
 CONFIG_MAPPING_NAMES = {
+    'Adaptive': 'watermark.adaptive.AdaptiveConfig',
+    'IE': 'watermark.ie.IEConfig',
+    'EWD': 'watermark.ewd.EWDConfig',
     'KGW': 'watermark.kgw.KGWConfig',
     "SpanWM": "watermark.spanwm.SpanWMConfig",
     'SWEET': 'watermark.sweet.SWEETConfig'
