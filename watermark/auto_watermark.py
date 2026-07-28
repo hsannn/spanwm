@@ -25,6 +25,9 @@ from typing import List
 from watermark.auto_config import AutoConfig
 
 WATERMARK_MAPPING_NAMES = {
+    'Adaptive': 'watermark.adaptive.Adaptive',
+    'IE': 'watermark.ie.IE',
+    'EWD': 'watermark.ewd.EWD',
     'KGW': 'watermark.kgw.KGW',
     "SpanWM": "watermark.spanwm.SpanWM",
     'SWEET': 'watermark.sweet.SWEET'
