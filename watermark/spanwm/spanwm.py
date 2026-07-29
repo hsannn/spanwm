@@ -210,6 +210,14 @@ class SpanWM(BaseWatermark):
         tok = self.config.generation_tokenizer
         model = self.config.generation_model
         enc = tok(context, return_tensors="pt", add_special_tokens=True).to(self.config.device)
+        if enc["input_ids"].shape[1] == 0:
+            # empty context (site anchored at char 0): tokenizers without a BOS
+            # (Qwen3) encode it to zero tokens and generate() crashes on the
+            # empty prefill. Seed with the document separator so generation is
+            # unconditional — the same thing Llama's [BOS]-only encoding does.
+            sid = tok.bos_token_id if tok.bos_token_id is not None else tok.eos_token_id
+            enc = {"input_ids": torch.tensor([[sid]], dtype=torch.long, device=self.config.device),
+                   "attention_mask": torch.ones(1, 1, dtype=torch.long, device=self.config.device)}
         plen = enc["input_ids"].shape[1]
         gen_kwargs = dict(
             max_new_tokens=max_new_tokens,

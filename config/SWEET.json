@@ -5,5 +5,5 @@
     "hash_key": 15485863,
     "z_threshold": 4.0,
     "prefix_length": 1,
-    "entropy_threshold": 0.9
+    "entropy_threshold": 2.2
 }

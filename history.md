@@ -1,4 +1,4 @@
-# SpanWM 개발 히스토리 (v0 → v7)
+# SpanWM 개발 히스토리 (v0 → v9)
 
 한 줄 목표: **워터마크를 텍스트 전체가 아니라, 파서로 다시 찾을 수 있는 syntactic span 하나에만 심고 그 부분만 검출한다.**
 
@@ -14,6 +14,8 @@
 | v5 | v3 + per-span PRF 역할 선택 | Llama base | **0.986** | 역할 다양화, 소폭 대가 |
 | v6 | v5 + multi-span (6토큰×4곳 합산) | Llama base | **0.980** | 손상 분산·내결함성, 검출력 소폭↓ |
 | v7 | v6 + splice 수정 (경계 drift·지문 제거) | Llama base | **0.989** | v5 넘어섬 + multi-span 장점 유지 |
+| v8 | (팀원 개별 개발) | — | — | — |
+| v9 | span 단위 = benepar constituent (NP/VP/PP) | Llama base | **0.984** | extent 기반 부활, 품질↑ 검출력 소폭↓ |
 
 γ(green list 비율)와 판정법도 같이 진화: v1·v2초반 γ0.5 + z-score → v2후반부터 **γ0.25 + exact binomial p**.
 
@@ -84,6 +86,35 @@
 - **결과 (n200, neg=unwatermarked)**: AUROC **0.9891**, mean z **+5.45** (neg −0.04), TPR@FPR=10/5/1/0.1% = 0.980/0.973/0.956/**0.892**, verified 74/200 (v6 25%→37%). **v5(0.986/+5.34)를 넘으면서** multi-span의 품질 분산·내결함성은 유지 — v6에서 잃었던 검출력이 splice 수정만으로 전부 회복되고도 남음. smoke 단계 확인: 검출 green율 0.63→0.82(위치별 평탄, 하락 프로파일 소멸), 구두점·이중공백 지문 0건.
 - **교훈**: splice 경계는 "문자열이 자연스러운가"가 아니라 **"재토큰화가 생성 토큰열을 그대로 복원하는가"**로 설계해야 한다. multi-span은 경계 수를 4배로 늘리므로 경계당 고정 손실이 그대로 4배가 된다.
 - **추가 발견 (v7 작업 중, 전 버전 공통)**: `torch.randperm`은 같은 seed라도 **CPU/CUDA generator가 다른 수열**을 냄 → embed(GPU)와 다른 device에서 detect하면 greenlist가 달라져 **조용히 AUROC 0.5**가 됨 (CPU 스캔 실측: verified 샘플조차 green율 ≈ γ=0.25). detect는 반드시 embed와 같은 device 종류에서 실행.
+
+---
+
+## v9 — span 단위 = constituency parse의 constituent (2026-07-28)
+
+- **동기**: v3~v7의 고정 K window는 자유생성이 구문 경계를 넘쳐 딴소리하는 품질 문제를
+  안고 있었음. v1에서 "constituent extent 검정"이 실패한 원인은 dep parser의 경계
+  불안정(IoU 0.33)이었으니, **constituency parser(benepar)의 경계라면 재생성을 버티지
+  않을까**가 v9의 가설.
+- **방식** (`watermark/spanwm_v9/`, v7 상속): role = constituent 라벨 **NP/VP/PP**
+  (C4 실측 시 전체 constituent의 71%; 4위 S 13%는 문장 전체라 부적합, 그 외 전부 5% 미만 —
+  atomic 라벨 총 27종). v5 PRF·v6 scan·v7 splice는 그대로, ① 재생성 길이 = 원본
+  constituent의 토큰 수(가변, max_span_tokens 40→12), ② 검출 = 재구성된 constituent의
+  extent(map_positions), ③ scan 전진 = constituent end_char.
+- **파서 이슈 2건** (constituent_ops.py에 격리):
+  1. transformers 5가 `build_inputs_with_special_tokens` 제거 → benepar 0.2.0 사망.
+     T5 규칙(`ids+[eos]`) shim으로 복원.
+  2. benepar T5 retokenizer가 **whitespace-only 토큰(\n, \t, 이중공백)에 assertion**
+     — C4 원문·draft에 흔함. whitespace run을 단일 공백으로 접은 사본을 파싱하고
+     인덱스 맵으로 offset을 원본 좌표로 역매핑 (str.find 금지 원칙 유지, embed/detect 대칭).
+- **결과 (n200)**: neg=unwm **AUROC 0.9844**, mean z **+4.22** (neg −0.05),
+  TPR@FPR=10/5/1/0.1% = 0.955/0.920/0.865/**0.771**; neg=natural 0.9791 / 0.616.
+  skip 0/200, parse failure 0, site 정렬률 78% (798개 중 d≤4 624개), role 분포
+  NP366/PP221/VP211, fill = median 3단어(샘플당 합계 평균 ~16토큰).
+- **평가**: v7(0.9891/+5.45/0.892) 대비 소폭 하락 — 샘플당 검정 N이 24→~16으로 준
+  것이 주 원인(z_max ∝ √N). 대신 **fill이 constituent 자리에 맞게 들어가 overflow
+  품질 문제가 구조적으로 소멸**. v1에서 죽었던 extent 기반 검정이 benepar 경계로는
+  작동함(정렬률 78%)이 핵심 확인 사항. 품질(PPL) 실측으로 트레이드오프를 정량화하고,
+  max_spans↑(site 수로 N 회복)·role set ablation(NP/VP/PP+SBAR/ADJP)이 다음 후보.
 
 ---
 

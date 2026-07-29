@@ -1,11 +1,10 @@
-"""SpanWM v8 embedding: multi-span, two admissible roles per anchor.
+"""SpanWM v9 embedding: multi-span over benepar CONSTITUENTS (variable-length
+sites; roles = NP/VP/PP labels).
 
-Same flow as spanwm_embed_v7.py but uses SpanWMV8 (the anchor PRF admits
-`roles_per_anchor`=2 roles instead of 1). v3..v7 files untouched.
-Models: meta-llama/Llama-3.1-3B, meta-llama/Llama-3.1-8B, Qwen/Qwen3-4B, Qwen/Qwen3-8B
+Same flow as spanwm_embed_v7.py but uses SpanWMV9. v3-v8 files untouched.
 
 Run (GPU node, spanwm env):
-    python spanwm_embed_v8.py --dataset c4|wmt16|cnn --num_samples 200 --model meta-llama/Llama-3.1-8B
+    python spanwm_embed_v9.py --dataset c4 --num_samples 200
 """
 
 import argparse
@@ -16,67 +15,12 @@ from collections import Counter
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from watermark.spanwm_v8 import SpanWMV8
+from watermark.spanwm_v9 import SpanWMV9
 from utils.transformers_config import TransformersConfig
-from evaluation.dataset import BaseDataset, C4Dataset
+from evaluation.dataset import C4Dataset
 
 MODEL_ID = "meta-llama/Llama-3.2-3B"
-
-
-class WMT16ENDataset(BaseDataset):
-    """Continuation on the English side: prompt = 'en' sentence.
-
-    Sentences under MIN_WORDS words are skipped (too little context to draft
-    from; the validation split goes down to 1 word). No natural_text.
-    """
-
-    MIN_WORDS = 10
-
-    def __init__(self, data_source, max_samples=200):
-        super().__init__(max_samples)
-        self.data_source = data_source
-        self.load_data()
-
-    def load_data(self):
-        with open(self.data_source) as f:
-            for line in f:
-                if len(self.prompts) >= self.max_samples:
-                    break
-                en = json.loads(line)["en"]
-                if len(en.split()) >= self.MIN_WORDS:
-                    self.prompts.append(en)
-
-
-class CNNArticleDataset(BaseDataset):
-    """Continuation over the article body (no summarization instruction —
-    the v8 recipe is a base model): prompt = first PROMPT_WORDS words of the
-    article (matches processed_c4's ~22-word prompts), natural_text = the rest.
-    """
-
-    PROMPT_WORDS = 30
-
-    def __init__(self, data_source, max_samples=200):
-        super().__init__(max_samples)
-        self.data_source = data_source
-        self.load_data()
-
-    def load_data(self):
-        with open(self.data_source) as f:
-            for line in f:
-                if len(self.prompts) >= self.max_samples:
-                    break
-                words = json.loads(line)["article"].split()
-                if len(words) <= self.PROMPT_WORDS:
-                    continue
-                self.prompts.append(" ".join(words[:self.PROMPT_WORDS]))
-                self.natural_texts.append(" ".join(words[self.PROMPT_WORDS:]))
-
-
-DATASETS = {
-    "c4": (C4Dataset, "dataset/c4/processed_c4.json"),
-    "wmt16": (WMT16ENDataset, "dataset/wmt16_de_en/validation.jsonl"),
-    "cnn": (CNNArticleDataset, "dataset/cnn_dailymail/test-00000-of-00001.jsonl"),
-}
+DATASETS = {"c4": (C4Dataset, "dataset/c4/processed_c4.json")}
 
 
 def load_dataset(name, num_samples):
@@ -91,13 +35,12 @@ def main() -> None:
     ap.add_argument("--dataset", default="c4", choices=list(DATASETS))
     ap.add_argument("--num_samples", type=int, default=200)
     ap.add_argument("--model", default=MODEL_ID)
-    ap.add_argument("--config", default="config/SpanWM_v8.json")
+    ap.add_argument("--config", default="config/SpanWM_v9.json")
     ap.add_argument("--output", default=None)
     ap.add_argument("--max_new_tokens", type=int, default=200)
     args = ap.parse_args()
 
-    model_tag = args.model.split("/")[-1]
-    output = args.output or f"outputs/spanwm_v8_{model_tag}_{args.dataset}_n{args.num_samples}.jsonl"
+    output = args.output or f"outputs/spanwm_v9_{args.dataset}_n{args.num_samples}.jsonl"
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -115,10 +58,7 @@ def main() -> None:
         device=device, max_new_tokens=args.max_new_tokens,
         do_sample=True, top_p=0.9, temperature=0.8,
     )
-    watermark = SpanWMV8(args.config, transformers_config)
-    print(f"roles={watermark.config.roles}  roles_per_anchor={watermark.config.roles_per_anchor}"
-          f"  max_spans={watermark.config.max_spans}"
-          f"  span_window_tokens={watermark.config.span_window_tokens}", flush=True)
+    watermark = SpanWMV9(args.config, transformers_config)
 
     n_skipped = n_verified = 0
     site_counts = Counter()
@@ -140,8 +80,6 @@ def main() -> None:
                 role_counts[s["role"]] += 1
             record = {
                 "index": i,
-                "model": args.model,
-                "vocab_size": model.config.vocab_size,
                 "prompt": prompt,
                 "watermarked_text": wm_text,
                 "unwatermarked_text": unwm_text,
@@ -162,6 +100,7 @@ def main() -> None:
     print(f"\nwrote {n} records -> {output}   skipped: {n_skipped}   verified: {n_verified}/{n}", flush=True)
     print(f"sites per sample: {dict(sorted(site_counts.items()))}", flush=True)
     print(f"role distribution: {dict(role_counts)}", flush=True)
+    print(f"parse failures (too-long sentences etc.): {watermark.utils.extractor.n_parse_failures}", flush=True)
 
 
 if __name__ == "__main__":

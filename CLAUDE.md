@@ -114,15 +114,6 @@ previous), with its own `config/SpanWM_vN.json`, `spanwm_embed_vN.py`,
   window (v5 PRF rule per site), embed and detect share the same left→right
   scan (`scan_sites`), green counts of all windows pooled into ONE exact
   binomial test.
-- **v8 (current)**: v7 + **two-role anchor PRF**. The per-span PRF now indexes
-  the fixed list of `roles_per_anchor`-subsets of `roles` (default k=2, so 3
-  pairs out of SUBJECT/OBJECT/PREDICATE) and a span is a site if its role is
-  **in** that subset — v5–v7 required equality with a single role. ~2/3 of
-  parsed spans become role-eligible instead of ~1/3, so the left→right scan
-  reaches `max_spans` sites in more drafts (larger pooled N). Same key material
-  and same left-of-anchor n-gram, so the embed/detect invariant is unchanged;
-  `roles_per_anchor: 1` reproduces v7's selection byte-for-byte (verified).
-  Splicing and the pooled binomial detector are inherited from v7 untouched.
 - **v7**: v6 + **splice fixes** in `_regen_at` (detector unchanged
   from v6):
   1. *Drift-free left boundary*: if `left` ends with a space, generate from
@@ -140,6 +131,45 @@ previous), with its own `config/SpanWM_vN.json`, `spanwm_embed_vN.py`,
      fingerprint, 23/200 in v6); a fill that OPENS with punctuation is
      resampled up to 3×, else attached directly without a space (that site is
      sacrificed — natural text over fingerprint).
+- **v8 (current)**: v7 + **two-role anchor PRF**. The per-span PRF now indexes
+  the fixed list of `roles_per_anchor`-subsets of `roles` (default k=2, so 3
+  pairs out of SUBJECT/OBJECT/PREDICATE) and a span is a site if its role is
+  **in** that subset — v5–v7 required equality with a single role. ~2/3 of
+  parsed spans become role-eligible instead of ~1/3, so the left→right scan
+  reaches `max_spans` sites in more drafts (larger pooled N). Same key material
+  and same left-of-anchor n-gram, so the embed/detect invariant is unchanged;
+  `roles_per_anchor: 1` reproduces v7's selection byte-for-byte (verified).
+  Splicing and the pooled binomial detector are inherited from v7 untouched.
+- **v9**: v7 with the **span unit changed to a
+  CONSTITUENT** from a constituency parse (benepar via spaCy); roles are now
+  constituency labels `["NP","VP","PP"]`. The v5 PRF role rule and v6 scan /
+  pooled exact binomial are inherited unchanged. Per-piece changes
+  (`watermark/spanwm_v9/`):
+  1. `ConstituentExtractor` (`constituent_ops.py`): benepar spaCy component →
+     constituents as spaCy Spans (char offsets, never `str.find()`). NOT
+     constituent-treelib — its phrase extraction returns strings w/o offsets.
+     Two workarounds it carries: (a) a transformers-5 shim restoring
+     `build_inputs_with_special_tokens` (removed in v5, benepar 0.2.0 calls
+     it); (b) benepar's T5 retokenizer **asserts on whitespace-only tokens**
+     (`\n`, `\t`, double spaces — routine in C4/drafts), so parsing runs on a
+     whitespace-collapsed copy and an index map converts offsets back to
+     original coordinates (exact; verified). Parses are cached (OrderedDict,
+     32 texts) since one scan re-extracts the same text repeatedly.
+  2. embed `_regen_at`: generates as many watermarked tokens as the ORIGINAL
+     constituent had (variable k per site, bounded by the min/max_span_tokens
+     filter — max lowered 40→12 so free generation stays constituent-scale).
+  3. detect: each site tests its RECONSTRUCTED constituent's own token extent
+     (`map_positions`), not a fixed K_s window; still one pooled binomial.
+  4. scan advance = past the constituent `end_char` (embed's `window_end_char`
+     re-finds the site from `anchor−4` so it matches the detector's advance).
+  The bet: benepar constituent boundaries survive regeneration well enough to
+  revive the extent-based window (v1's failure with the dep parser), buying
+  naturally-scoped watermark regions. Watch: recon constituent longer than the
+  fill → dilution; parse-failure count is printed by both entry scripts.
+  **Result (n200, 2026-07-28)**: AUROC 0.9844 (unwm) / 0.9791 (natural),
+  TPR@0.1% 0.771 / 0.616, mean z +4.22, site alignment 78%, parse failures 0.
+  Slightly below v7 (N per sample 24→~16) but the fixed-K overflow quality
+  issue is structurally gone. Details: `history.md` v9.
 
 ### Key implementation points
 - **RoleSelector**: `roles[ int.from_bytes(sha256(master_key||b"role-selection")[:8]) % len(roles) ]`. Fixed role set, **not** a mutable-candidate-list index (which shifts after regeneration). Deterministic; never Python `hash()`.
