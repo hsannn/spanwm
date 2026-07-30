@@ -1,0 +1,132 @@
+% Requires \usepackage{booktabs}
+% Appendix: hyperparameters of the four methods reported in the paper
+% (IE, SWEET, SpARK-R, SpanWM).
+%
+% Sources (verbatim from the run configs):
+%   IE       config/IE.json
+%   SWEET    config/SWEET.json
+%   SpARK-R  config/SpARKR_softfix.json
+%   SpanWM   config/SpanWM_v8.json
+% Shared decoding settings: baseline_embed.py / spanwm_embed_v8.py.
+
+% ---------------------------------------------------------------------------
+% Table 1 — shared generation / evaluation protocol
+% ---------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Generation and evaluation protocol, shared by all methods. Every
+corpus is generated with the same decoder so that the methods differ only in
+their watermarking hyperparameters (Table~\ref{tab:hyperparams}).}
+\label{tab:protocol}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Setting & Value \\
+\midrule
+Backbones      & Llama-3.2-3B, Llama-3.1-8B, Qwen3-4B, Qwen3-8B \\
+Model mode     & base checkpoints, no chat template, bfloat16 \\
+Datasets       & C4, CNN/DailyMail, WMT16 (de--en) \\
+Prompts / setting & 200 \\
+Max new tokens & 200 \\
+Decoding       & ancestral sampling, top-$p$ $=0.9$, $T=0.8$ \\
+Random seed    & 42 \\
+Negative class & unwatermarked completion of the same prompt \\
+Metrics        & AUROC, TPR at FPR $=10/5/1/0.1\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+% Table 2 — side-by-side hyperparameters (compact; recommended for the paper)
+% ---------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Watermarking hyperparameters. All methods share the same green-list
+hash key ($15485863$); ``--'' marks a parameter that does not exist for that
+method. SpanWM tests a pooled window of
+$N = \texttt{max\_spans} \times \texttt{span\_window\_tokens} = 4 \times 6 = 24$
+tokens and therefore decides with an exact binomial tail rather than the
+large-$N$ normal approximation.}
+\label{tab:hyperparams}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Parameter & IE & SWEET & SpARK-R & SpanWM \\
+\midrule
+Green-list fraction $\gamma$   & 0.5 & 0.5 & 0.25 & 0.25 \\
+Logit bias $\delta$            & 3.0 & 2.0 & 4.0  & 4.0 \\
+Context width $h$              & 1   & 1   & --   & 1 \\
+Hash key                       & \multicolumn{4}{c}{$15485863$} \\
+\addlinespace
+Entropy threshold $\tau$       & 0.9 & 0.9 & --   & -- \\
+Trigger divisor $D$            & --  & --  & 6    & -- \\
+Green-list seed                & --  & --  & 0    & -- \\
+Watermarked sites / text       & --  & --  & --   & 4 \\
+Tokens per site $K$            & --  & --  & --   & 6 \\
+\addlinespace
+Decision rule                  & $z>4$ & $z>4$ & $z>4$ & $p<0.01$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+% Table 3 — full per-method listing (use if the appendix has room)
+% ---------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Full hyperparameter listing per method.}
+\label{tab:hyperparams-full}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Parameter & Value \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{IE}} \\
+\quad green-list fraction $\gamma$       & 0.5 \\
+\quad logit bias $\delta$                & 3.0 \\
+\quad context width (prefix length)      & 1 \\
+\quad hash key                           & 15485863 \\
+\quad detection threshold                & $z > 4.0$ \\
+\quad entropy-tagger threshold $\tau$    & 0.9 \\
+\quad tagger checkpoint                  & \texttt{entropy\_tagger\_0\_9.pt} \\
+\quad sentence encoder                   & \texttt{sup-simcse-roberta-base} \\
+\quad context direction                  & left \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textit{SWEET}} \\
+\quad green-list fraction $\gamma$       & 0.5 \\
+\quad logit bias $\delta$                & 2.0 \\
+\quad context width (prefix length)      & 1 \\
+\quad hash key                           & 15485863 \\
+\quad detection threshold                & $z > 4.0$ \\
+\quad entropy threshold $\tau$           & 0.9 \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textit{SpARK-R}} \\
+\quad green-list fraction $\gamma$       & 0.25 \\
+\quad logit bias $\delta$                & 4.0 \\
+\quad trigger divisor $D$ (\texttt{modular}) & 6 \\
+\quad variant                            & position-fixed soft (\texttt{soft\_fixed}) \\
+\quad green-list seed                    & 0 \\
+\quad hash key                           & 15485863 \\
+\quad detection threshold                & $z > 4.0$ \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textit{SpanWM}} \\
+\quad green-list fraction $\gamma$       & 0.25 \\
+\quad logit bias $\delta$                & 4.0 \\
+\quad context width (prefix length)      & 1 \\
+\quad hash key                           & 15485863 \\
+\quad PRF schemes ($f$ / window)         & time / left \\
+\quad watermarked sites per text         & 4 (\texttt{max\_spans}) \\
+\quad tokens per site $K$                & 6 (\texttt{span\_window\_tokens}) \\
+\quad pooled test size $N$               & $4 \times 6 = 24$ \\
+\quad decision rule                      & exact binomial $p < 0.01$ \\
+\quad syntactic roles                    & \{SUBJECT, OBJECT, PREDICATE\} \\
+\quad admissible roles per anchor         & 2 (\texttt{roles\_per\_anchor}) \\
+\quad anchor PRF $n$-gram                & 16 characters left of the anchor \\
+\quad span length bounds                 & 2--40 tokens \\
+\quad regeneration attempts per site     & 4 \\
+\quad anchor tolerance                   & $\le 4$ characters \\
+\quad parser                             & spaCy \texttt{en\_core\_web\_sm} + textacy \\
+\quad master key                         & \texttt{0011223344556677} \\
+\bottomrule
+\end{tabular}
+\end{table}

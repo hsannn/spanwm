@@ -40,20 +40,27 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--column", default="watermarked_text")
-    ap.add_argument("--model", default=MODEL_ID)
+    ap.add_argument("--model", default=None,
+                    help="tokenizer model id; defaults to the 'model' field recorded "
+                         f"in the input jsonl, else {MODEL_ID}")
     ap.add_argument("--config", default="config/SpanWM_v8.json")
     ap.add_argument("--negative", default="unwatermarked", choices=["unwatermarked", "natural"])
     args = ap.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    transformers_config = TransformersConfig(
-        model=None, tokenizer=tokenizer, vocab_size=len(tokenizer), device=device)
-    watermark = SpanWMV8(args.config, transformers_config)
-
     neg_key = f"{args.negative}_text"
     with open(args.input) as f:
         records = [json.loads(line) for line in f if line.strip()]
+
+    model_id = args.model or (records[0].get("model") if records else None) or MODEL_ID
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    # embed uses model.config.vocab_size for the greenlist randperm; for Qwen3 this
+    # differs from len(tokenizer) (151936 vs 151669), so reuse the recorded value.
+    vocab_size = (records[0].get("vocab_size") if records else None) or len(tokenizer)
+    transformers_config = TransformersConfig(
+        model=None, tokenizer=tokenizer, vocab_size=vocab_size, device=device)
+    watermark = SpanWMV8(args.config, transformers_config)
 
     def detect(text):
         if not text:
@@ -84,6 +91,7 @@ def main() -> None:
 
     print("=" * 66)
     print(f"input           : {args.input}")
+    print(f"tokenizer model : {model_id}")
     print(f"samples         : {n}   negative class: {args.negative}   "
           f"[v8: multi-span pooled, roles_per_anchor={watermark.config.roles_per_anchor}]")
     print(f"reconstruction  : pos {len(pos_ok_z)}/{len(pos_z)}   neg {len(neg_ok_z)}/{n_neg}")
