@@ -31,6 +31,7 @@ WATERMARK_MAPPING_NAMES = {
     'SpARKP': 'watermark.sparkp.SpARKP',
     'SpARKR': 'watermark.sparkr.SpARKR',
     'KGW': 'watermark.kgw.KGW',
+    'SynthID': 'watermark.synthid.SynthID',
     "SpanWM": "watermark.spanwm.SpanWM",
     'SWEET': 'watermark.sweet.SWEET'
 }

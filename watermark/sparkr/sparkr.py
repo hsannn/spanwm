@@ -73,7 +73,7 @@ class SpARKRConfig(BaseConfig):
         self.greenlist_seed = self.config_dict.get('greenlist_seed', 0)
         self.z_threshold = self.config_dict.get('z_threshold', 4.0)
         # bl_type "hard" = paper's SpARK-R (trigger tokens resampled from the
-        # green list).  [the "soft" variant -- a global +delta bias on the
+        # green list). "soft" = KGW/Unigram-style variant: +delta bias on the
         # fixed global green list at EVERY step, no resampling — trigger
         # positions then land green with boosted (not certain) probability.
         # "soft_fixed" = position-fixed soft: triggers are decided by the
@@ -141,7 +141,13 @@ class SpARKRUtils:
             greenlist_size = int(self.table_size * config.gamma)
             self.greenlist_ids = self.table[perm][:greenlist_size]
         self.greenlist_set = set(self.greenlist_ids.tolist())
-        vocab_size = len(self.tokenizer)
+        # Size the masks to the LOGITS width, not the tokenizer. Qwen-family
+        # models pad their embedding matrix beyond the tokenizer (Qwen3:
+        # len(tokenizer)=151669 vs config.vocab_size=151936), so masks built
+        # from the tokenizer are too short and masked_fill raises a shape
+        # mismatch. Llama is unaffected (the two are equal), which is why this
+        # only surfaced when scaling to Qwen.
+        vocab_size = max(len(self.tokenizer), int(getattr(self.config, "vocab_size", 0) or 0))
         self.green_mask = torch.zeros(vocab_size, dtype=torch.bool, device=self.device)
         self.green_mask[self.greenlist_ids] = True
         self.table_mask = torch.zeros(vocab_size, dtype=torch.bool, device=self.device)
@@ -231,17 +237,22 @@ class SpARKR(BaseWatermark):
         past = None
         generated = []
         step_input = ids
+        soft = self.config.bl_type == "soft"
         for _ in range(max_new):
             out = model(input_ids=step_input, past_key_values=past, use_cache=True)
             past = out.past_key_values
             logits = out.logits[:, -1, :].float()
+            if soft:
+                # KGW-style: bias the fixed global green list, sample once
+                logits = logits + self.config.delta * \
+                    self.utils.green_mask[:logits.shape[-1]].float().unsqueeze(0)
             warped = self._warp(logits.clone()) if do_sample else logits
             if do_sample:
                 probs = torch.softmax(warped, dim=-1)
                 t = int(torch.multinomial(probs, 1).item())
             else:
                 t = int(torch.argmax(warped, dim=-1).item())
-            reroute = (self.utils.is_generation_trigger(t)
+            reroute = (not soft and self.utils.is_generation_trigger(t)
                        and t not in self.utils.greenlist_set)
             if reroute and self.config.bl_type == "soft_fixed" \
                     and self.config.ent_tau is not None:

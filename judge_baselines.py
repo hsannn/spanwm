@@ -75,6 +75,16 @@ ARMS = {
     "ltw1": ("outputs/ltw1_c4_n200.jsonl", "watermarked_text"),
     "ltw0": ("outputs/ltw0_c4_n200.jsonl", "watermarked_text"),
 
+    # llama3.2-3b continuation-protocol cells (scale-up naming)
+    "nowm_cnn": ("outputs/scaleup/sparkr_softfix_llama3.2-3b_cnn_n200.jsonl", "unwatermarked_text"),
+    "sparkr_cnn": ("outputs/scaleup/sparkr_softfix_llama3.2-3b_cnn_n200.jsonl", "watermarked_text"),
+    "sweet_cnn": ("outputs/scaleup/sweet_tau_llama3.2-3b_cnn_n200.jsonl", "watermarked_text"),
+    "ie_cnn": ("outputs/scaleup/ie_tau_llama3.2-3b_cnn_n200.jsonl", "watermarked_text"),
+    "nowm_wmt16": ("outputs/scaleup/sparkr_softfix_llama3.2-3b_wmt16_n200.jsonl", "unwatermarked_text"),
+    "sparkr_wmt16": ("outputs/scaleup/sparkr_softfix_llama3.2-3b_wmt16_n200.jsonl", "watermarked_text"),
+    "sweet_wmt16": ("outputs/scaleup/sweet_tau_llama3.2-3b_wmt16_n200.jsonl", "watermarked_text"),
+    "ie_wmt16": ("outputs/scaleup/ie_tau_llama3.2-3b_wmt16_n200.jsonl", "watermarked_text"),
+
 }
 
 

@@ -24,7 +24,8 @@ So we redo the distillation faithfully but in-domain:
 Training documents come from C4 rows 1000+ (our evaluation uses rows 0-199),
 so there is no overlap with anything reported.
 
-    python train_ie_tagger.py --n_docs 300 --max_pos 100
+    python train_ie_tagger.py --n_docs 300 --max_pos 100                # smoke
+    python train_ie_tagger.py --n_docs 5000 --target_positions 30000    # paper
 """
 
 import argparse
@@ -36,6 +37,8 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+
+from utils.lm_compat import dtype_kwargs
 
 SIMCSE = "princeton-nlp/sup-simcse-roberta-base"
 TAUS = (0.9, 2.2, 3.5)
@@ -71,16 +74,30 @@ def main() -> None:
     ap.add_argument("--model", required=True)
     ap.add_argument("--data", default="dataset/c4/processed_c4.json")
     ap.add_argument("--start_row", type=int, default=1000)
+    # Documents are a means, not the budget: a WMT16 sentence yields ~22
+    # positions where a C4 document yields 100, so a fixed --n_docs trains
+    # the WMT16 taggers on 4.6x less data and makes IE incomparable ACROSS
+    # datasets. Consume documents until the position target is met instead;
+    # --n_docs is only the ceiling on how many may be read.
     ap.add_argument("--n_docs", type=int, default=300)
+    ap.add_argument("--target_positions", type=int, default=0,
+                    help="stop once this many labelled positions are "
+                         "collected (0 = use every document read)")
     ap.add_argument("--max_pos", type=int, default=100)
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--outdir", default="watermark/ie/model")
+    ap.add_argument("--no_highlights", action="store_true",
+                    help="use article text only (continuation protocol: the "
+                         "model only ever sees article prose, never summaries)")
+    ap.add_argument("--taus", nargs="+", type=float, default=list(TAUS),
+                    help="entropy thresholds to distill (default: all three)")
     args = ap.parse_args()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(args.outdir, exist_ok=True)
 
     ltok = AutoTokenizer.from_pretrained(args.model)
-    lm = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto").to(dev).eval()
+    lm = AutoModelForCausalLM.from_pretrained(
+        args.model, **dtype_kwargs("auto")).to(dev).eval()
     stok = AutoTokenizer.from_pretrained(SIMCSE)
     smod = AutoModel.from_pretrained(SIMCSE).to(dev).eval()
 
@@ -95,11 +112,22 @@ def main() -> None:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-    print(f"training docs: {len(rows)} (C4 rows {args.start_row}+)", flush=True)
+    print(f"training docs available: {len(rows)} (rows {args.start_row}+, "
+          f"target {args.target_positions or 'all'} positions)", flush=True)
 
     feats, ents = [], []
     for k, r in enumerate(rows):
-        text = (r.get("prompt", "") + r.get("natural_text", "")).strip()
+        # schema differs per dataset: C4 = prompt + natural_text,
+        # CNN/DailyMail = article (+ highlights), WMT16 de-en = en side
+        if "natural_text" in r or "prompt" in r:
+            text = (r.get("prompt", "") + r.get("natural_text", "")).strip()
+        elif "article" in r:
+            text = (r.get("article", "") if args.no_highlights else
+                    r.get("article", "") + " " + r.get("highlights", "")).strip()
+        elif "en" in r:
+            text = r.get("en", "").strip()
+        else:
+            continue
         ids = ltok(text, return_tensors="pt", add_special_tokens=False,
                    truncation=True, max_length=256)["input_ids"].to(dev)
         if ids.shape[1] < 12:
@@ -121,16 +149,28 @@ def main() -> None:
         ents.extend(ent[:n].tolist())
         if (k + 1) % 50 == 0:
             print(f"  {k + 1}/{len(rows)} docs, {len(ents)} positions", flush=True)
+        if args.target_positions and len(ents) >= args.target_positions:
+            print(f"  reached {len(ents)} positions after {k + 1} docs",
+                  flush=True)
+            break
 
+    if not feats:
+        raise SystemExit(
+            f"no training positions from {args.data} at rows "
+            f"{args.start_row}+ -- the file has no held-out documents there")
     X = torch.cat(feats)
     y_ent = torch.tensor(ents, dtype=torch.float32)
+    if args.target_positions and X.shape[0] < args.target_positions * 0.9:
+        print(f"WARNING: corpus exhausted at {X.shape[0]} positions, short "
+              f"of the {args.target_positions} target -- this tagger is "
+              f"trained on less data than the others", flush=True)
     print(f"dataset: {X.shape[0]} positions, entropy mean={y_ent.mean():.3f} "
           f"median={y_ent.median():.3f}", flush=True)
     perm = torch.randperm(X.shape[0], generator=torch.Generator().manual_seed(42))
     X, y_ent = X[perm], y_ent[perm]
     ntr = int(0.9 * X.shape[0])
 
-    for tau in TAUS:
+    for tau in args.taus:
         # IE polarity: 1 = low entropy (below tau), 0 = high entropy
         y = (y_ent < tau).long()
         Xtr, ytr, Xte, yte = X[:ntr].to(dev), y[:ntr].to(dev), X[ntr:].to(dev), y[ntr:]

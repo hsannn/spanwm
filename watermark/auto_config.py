@@ -30,6 +30,7 @@ CONFIG_MAPPING_NAMES = {
     'SpARKP': 'watermark.sparkp.SpARKPConfig',
     'SpARKR': 'watermark.sparkr.SpARKRConfig',
     'KGW': 'watermark.kgw.KGWConfig',
+    'SynthID': 'watermark.synthid.SynthIDConfig',
     "SpanWM": "watermark.spanwm.SpanWMConfig",
     'SWEET': 'watermark.sweet.SWEETConfig'
 }

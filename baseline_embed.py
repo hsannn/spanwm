@@ -7,8 +7,15 @@ is directly comparable to the SpanWM v6 run:
 Watermarked / unwatermarked texts INCLUDE the prompt (raw completion decode),
 exactly like SpanWM's draft path; baseline_detect.py strips it before scoring.
 
-KGW config is the SpanWM-matched strength (config/KGW_g0.25_d4.0.json:
-gamma=0.25, delta=4.0, same hash_key / prefix_length / schemes as SpanWM).
+One config per algorithm (config/KGW.json, config/SWEET.json, ...). A
+reported row that only changes a value is that same file with the field
+edited, not a second config file:
+    KGW gamma 0.5/delta 2.0 (as shipped) or 0.25/4.0
+    SpARK-P pos_tags ["V"] (Verb) / ["N"] (Noun) / ["DT"] (Det)
+    SWEET, IE  entropy_threshold = the cell's calibrated tau
+    LTW     variant ltw0 (as shipped) or ltw1
+tools/make_cfg.py writes the per-cell tau/tagger variants into
+config/generated/, which is not committed.
 SynthID uses MarkLLM defaults (config/SynthID.json, mean detector,
 non-distortionary). Its internal pre-tournament temperature is aligned to the
 sampling temperature (0.8) below; HF's temperature/top-p warpers still apply
@@ -28,31 +35,49 @@ Run (GPU node, wmattack env):
 import argparse
 import json
 import os
+import time
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from watermark.auto_watermark import AutoWatermark
 from utils.transformers_config import TransformersConfig
-from evaluation.dataset import C4Dataset
+from utils.lm_compat import dtype_kwargs, vocab_size as lm_vocab_size
+from evaluation.dataset import (C4Dataset, CNN_DailyMailDataset,
+                                WMT16DE_ENDataset)
+# the continuation loaders live apart so evaluation/dataset.py (the
+# collaborator's file) stays untouched
+from evaluation.dataset_continuation import (CNNArticleDataset,
+                                             WMT16ENDataset)
 
 MODEL_ID = "meta-llama/Llama-3.2-3B"
-DATASETS = {"c4": (C4Dataset, "dataset/c4/processed_c4.json")}
+# All three loaders take lines[:max_samples] -> the FIRST N rows, in file
+# order, no shuffling. Same selection convention across datasets.
+DATASETS = {
+    "c4": (C4Dataset, "dataset/c4/processed_c4.json"),
+    # CNN and Daily Mail are reported SEPARATELY (200 each). The merged
+    # corpus mixes two outlets and the HF release strips bylines, so the two
+    # are split by SHA1(source URL) -- see tmp_sync/split_by_url.py.
+    # continuation protocol (collaborator-style): first 30 words -> continue
+    "cnn": (CNNArticleDataset,
+            "dataset/cnn_dailymail/test-00000-of-00001.jsonl"),
+    "cnn_dailymail": (CNN_DailyMailDataset,
+                      "dataset/cnn_dailymail/processed_cnn_dailymail.json"),
+    # collaborator protocol: en-side continuation, <10-word sentences skipped
+    "wmt16": (WMT16ENDataset,
+              "dataset/wmt16_de_en/processed_wmt16_de_en.json"),
+    "wmt16_de_en": (WMT16DE_ENDataset,
+                    "dataset/wmt16_de_en/processed_wmt16_de_en.json"),
+}
 DEFAULT_CONFIGS = {
-    "KGW": "config/KGW_g0.25_d4.0.json",
+    "KGW": "config/KGW.json",
     "SynthID": "config/SynthID.json",
     "SpARKP": "config/SpARKP.json",
     "SpARKR": "config/SpARKR.json",
-    "LemmaWM": "config/LemmaWM.json",
-    "LemmaWMS": "config/LemmaWMS_k2.json",
-    "ClusterWM": "config/ClusterWM_k2.json",
-    "SentClusterWM": "config/SentClusterWM.json",
-    "SWEET": "config/SWEET_g0.25_d4.0_t0.9.json",
-    "EWD": "config/EWD_g0.25_d4.0.json",
+    "SWEET": "config/SWEET.json",
+    "EWD": "config/EWD.json",
     "Adaptive": "config/Adaptive.json",
     "IE": "config/IE.json",
-    "PivotWM": "config/PivotWM.json",
-    "SpanCode": "config/SpanCode.json",
 }
 
 
@@ -89,7 +114,8 @@ def main() -> None:
     #                                    SpARKR_softfix.json), which naming by
     #                                    algorithm alone did not
     with open(config_path) as _f:
-        tag = json.load(_f).get("output_tag")
+        cfg_dict = json.load(_f)  # read once; also recorded in the meta json
+    tag = cfg_dict.get("output_tag")
     stem = tag or os.path.splitext(os.path.basename(config_path))[0]
     output = args.output or f"outputs/{stem.lower()}_{args.dataset}_n{args.num_samples}.jsonl"
     os.makedirs(os.path.dirname(output), exist_ok=True)
@@ -109,17 +135,23 @@ def main() -> None:
 
     ds = load_dataset(args.dataset, args.num_samples)
     n = min(args.num_samples, ds.prompt_nums)
+    gen_times, unwm_times = [], []
+
+    _load0 = time.perf_counter()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     # torch_dtype (not the 4.56+ `dtype` alias): the cluster env runs
     # transformers 4.55.4. "auto" -> bf16 for Llama-3.2 (matches the SpanWM run).
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto").to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model, **dtype_kwargs("auto")).to(device)
     model.eval()
+    _load_s = time.perf_counter() - _load0
     print(f"model dtype={next(model.parameters()).dtype}", flush=True)
 
     # Same sampling setup as spanwm_embed_v6.py.
     transformers_config = TransformersConfig(
-        model=model, tokenizer=tokenizer, vocab_size=model.config.vocab_size,
+        model=model, tokenizer=tokenizer,
+        vocab_size=lm_vocab_size(model, tokenizer),
         device=device, max_new_tokens=args.max_new_tokens,
         do_sample=True, top_p=0.9, temperature=0.8,
     )
@@ -133,18 +165,62 @@ def main() -> None:
     watermark = AutoWatermark.load(args.algorithm, algorithm_config=config_path,
                                    transformers_config=transformers_config)
 
+    n_params = sum(p.numel() for p in model.parameters())
+    meta = {
+        "model_path": args.model,
+        "model_name": getattr(model.config, "_name_or_path", args.model),
+        "model_type": getattr(model.config, "model_type", None),
+        "n_params": int(n_params),
+        "n_params_b": round(n_params / 1e9, 2),
+        "dtype": str(next(model.parameters()).dtype),
+        # The greenlist is randperm(vocab_size), so detection has to key on the
+        # SAME value generation used. len(tokenizer) differs from
+        # config.vocab_size on Qwen (151669 vs 151936) though not on Llama, so
+        # record both and let baseline_detect.py bind to them (--vocab_size
+        # model|tokenizer) instead of guessing.
+        "vocab_size": lm_vocab_size(model, tokenizer),
+        "tokenizer_len": len(tokenizer),
+        # measured once per run, never per sample: tools/paper_timing_table.py
+        # reports it separately so load cost can never inflate a per-sample figure
+        "model_load_s": round(_load_s, 2),
+        "algorithm": args.algorithm,
+        "config_file": config_path,
+        "config": {k: v for k, v in cfg_dict.items() if not k.startswith("_")},
+        "dataset": args.dataset,
+        "num_samples": n,
+        "max_new_tokens": args.max_new_tokens,
+        "seed": args.seed,
+        "sampling": {"do_sample": True, "top_p": 0.9, "temperature": 0.8},
+    }
+    print(f"meta: {meta['model_name']} ({meta['n_params_b']}B, {meta['dtype']})  "
+          f"vocab {meta['vocab_size']} (tokenizer {meta['tokenizer_len']})  "
+          f"load {meta['model_load_s']}s  "
+          f"{args.algorithm} <- {config_path}  dataset={args.dataset}", flush=True)
+
     print(f"gen_kwargs={transformers_config.gen_kwargs}", flush=True)
     print(f"model.generation_config={model.generation_config}", flush=True)
 
     with open(output, "w") as fout:
         for i in range(n):
             prompt = ds.get_prompt(i)
-            natural = ds.get_natural_text(i) if ds.natural_text_nums > i else ""
+            # C4 carries natural_text; CNN/DM and WMT16 carry references
+            if ds.natural_text_nums > i:
+                natural = ds.get_natural_text(i)
+            elif ds.reference_nums > i:
+                natural = ds.get_reference(i)
+            else:
+                natural = ""
 
             if args.algorithm == "SynthID":
                 watermark.logits_processor.state = None  # fresh per-sample state
+            t0 = time.perf_counter()
             wm_text = watermark.generate_watermarked_text(prompt)
+            t_wm = time.perf_counter() - t0
+            t0 = time.perf_counter()
             unwm_text = watermark.generate_unwatermarked_text(prompt)
+            t_unwm = time.perf_counter() - t0
+            gen_times.append(t_wm)
+            unwm_times.append(t_unwm)
 
             record = {
                 "index": i,
@@ -152,6 +228,10 @@ def main() -> None:
                 "watermarked_text": wm_text,
                 "unwatermarked_text": unwm_text,
                 "natural_text": natural,
+                # end-to-end wall time for THIS sample (seconds)
+                "gen_time_watermarked": round(t_wm, 4),
+                "gen_time_unwatermarked": round(t_unwm, 4),
+                "meta": meta,
             }
             fout.write(json.dumps(record, ensure_ascii=False) + "\n")
             fout.flush()
@@ -160,7 +240,27 @@ def main() -> None:
             n_un = len(tokenizer(unwm_text, add_special_tokens=False)["input_ids"])
             print(f"[{i + 1:>4}/{n}] wm_tokens={n_wm} unwm_tokens={n_un}", flush=True)
 
-    print(f"\nwrote {n} records -> {output}", flush=True)
+    import statistics as _st
+    summary = dict(meta)
+    summary["timing"] = {
+        "gen_watermarked_mean_s": round(_st.mean(gen_times), 4),
+        "gen_watermarked_median_s": round(_st.median(gen_times), 4),
+        "gen_watermarked_total_s": round(sum(gen_times), 2),
+        "gen_unwatermarked_mean_s": round(_st.mean(unwm_times), 4),
+        "gen_unwatermarked_total_s": round(sum(unwm_times), 2),
+        "overhead_ratio": round(_st.mean(gen_times) / max(_st.mean(unwm_times), 1e-9), 3),
+        "n": len(gen_times),
+    }
+    meta_path = output.replace(".jsonl", ".meta.json")
+    with open(meta_path, "w") as mf:
+        json.dump(summary, mf, indent=2)
+    t = summary["timing"]
+    print(f"\ntiming: watermarked {t['gen_watermarked_mean_s']:.3f}s/sample "
+          f"(median {t['gen_watermarked_median_s']:.3f}, total {t['gen_watermarked_total_s']:.1f}s)  "
+          f"| unwatermarked {t['gen_unwatermarked_mean_s']:.3f}s/sample  "
+          f"| overhead {t['overhead_ratio']:.2f}x", flush=True)
+    print(f"wrote {n} records -> {output}", flush=True)
+    print(f"wrote metadata     -> {meta_path}", flush=True)
 
 
 if __name__ == "__main__":
