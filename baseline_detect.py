@@ -37,7 +37,7 @@ give different permutations from the same seed).
 Run:
     python baseline_detect.py --input outputs/kgw_c4_n200.jsonl --algorithm KGW
     python baseline_detect.py --input outputs/synthid_c4_n200.jsonl --algorithm SynthID --negative natural
-    python baseline_detect.py --input outputs/ltw0_c4_n200.jsonl --algorithm LTW
+    python baseline_detect.py --input outputs/ltw0_c4_n200.jsonl --algorithm LTW --gpu 2
     python baseline_detect.py --input outputs/attacked/ltw/ltw0_c4_n200_GPTParaphrase.jsonl \
         --algorithm LTW --column attacked_text
 """
@@ -78,6 +78,34 @@ DEFAULT_CONFIGS = {
 NEEDS_LM = ("SWEET", "EWD", "LTW")
 # algorithms that are not registered in AutoWatermark (own vendored detector)
 STANDALONE = ("LTW",)
+
+
+def select_device(gpu):
+    """Pin the run to one GPU (or fall back to CPU). Returns the device string.
+
+    Masking with CUDA_VISIBLE_DEVICES rather than only passing "cuda:N" around
+    also confines the pieces that hardcode "cuda"/.cuda() -- SimCSE inside LTW,
+    the entropy tagger inside IE -- to the same card. One index only: peer-to-
+    peer copies between this cluster's A6000s are corrupt, so a model split over
+    two devices silently produces garbage.
+    """
+    if gpu is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    gpu = str(gpu).strip()
+    if len([g for g in gpu.split(",") if g.strip()]) != 1:
+        raise SystemExit(f"--gpu {gpu!r}: pass exactly ONE index "
+                         "(peer copies on this cluster are corrupt)")
+    if torch.cuda.is_initialized():
+        # something already touched CUDA -> masking no longer applies; address
+        # the card directly instead of silently landing on the wrong one
+        torch.cuda.set_device(int(gpu))
+        return f"cuda:{gpu}"
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu
+    if not torch.cuda.is_available():
+        raise SystemExit(f"--gpu {gpu}: no CUDA device visible under "
+                         f"CUDA_VISIBLE_DEVICES={gpu}")
+    torch.cuda.set_device(0)  # index within the masked view
+    return "cuda"
 
 
 def p_to_score(p):
@@ -393,18 +421,25 @@ def main() -> None:
     ap.add_argument("--truncation", default="char", choices=["char", "word", "none"])
     ap.add_argument("--variant", default=None, choices=["ltw0", "ltw1"],
                     help="LTW only: override the config's variant (must match generation)")
+    ap.add_argument("--gpu", default=None,
+                    help='GPU index to run on, e.g. "2" (sets CUDA_VISIBLE_DEVICES). '
+                         "Pass ONE index: peer-to-peer copies between this cluster's "
+                         "A6000s are corrupt. Default: all visible GPUs.")
     ap.add_argument("--scores_out", default=None,
                     help="sidecar json with per-sample scores (default <input>.<neg>.scores.json)")
     args = ap.parse_args()
 
     config_path = args.config or DEFAULT_CONFIGS[args.algorithm]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"==== Using {device}")
+    device = select_device(args.gpu)
+    print(f"==== Using {device}"
+          + (f" (CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')})"
+             if args.gpu is not None else ""))
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     # SWEET/EWD/LTW compute per-token entropy at detection -> need the LM loaded
     if args.algorithm in NEEDS_LM:
         from transformers import AutoModelForCausalLM
         det_model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto").to(device)
+        print(f"=======model: {args.model}")
         det_model.eval()
     else:
         det_model = None

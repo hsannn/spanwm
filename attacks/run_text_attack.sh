@@ -1,38 +1,48 @@
-#!/bin/bash
-# ================================================
-# run_text_attack.sh
-# Description: Run the word-level attacks (WordDeletion / SynonymSubstitution)
-#              on a SpanWM output jsonl.
-#
-# Usage:  bash attacks/run_text_attack.sh
-# ================================================
-
-set -euo pipefail
-
-# run from the project root so that the relative paths below work
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
-
 # nltk / wordnet live in the `spanwm` conda env -- call it by path
-PYTHON=/home/ssgyejin/miniconda3/envs/spanwm/bin/python
+# PYTHON=/home/ssgyejin/miniconda3/envs/spanwm/bin/python
+input_file="/home/ssgyejin/contents/spanwm/outputs/qwen_8b/sparkr_softfix_qwen3-8b_cnn_dailymail_n200.jsonl"
+output_dir="outputs/qwen_8b/daily_mail/sparkr"
+GPUS="0"
 
-input_file="/home/ssgyejin/contents/spanwm/outputs/sweet_c4_n200.jsonl"
-output_dir="outputs/attacked/sweet"
 
-
-$PYTHON attacks/text_attack.py \
-    --input "$input_file" \
-    --output_dir "$output_dir" \
-    --attacks WordDeletion SynonymSubstitution \
-    --mode fixed \
-    --ratios 0.1 0.2 0.3 0.4 0.5 \
-    --field watermarked_text \
-    --seed 42
-
-# paraphrasing attack -- OpenAI API, needs OPENAI_API_KEY in ./.env (costs money)
-$PYTHON attacks/paraphrasing_attack.py \
+python paraphrasing_attack.py \
     --input "$input_file" \
     --output_dir "$output_dir" \
     --field watermarked_text \
     --model gpt-5-mini \
     --reasoning_effort low \
     --workers 8
+
+python paraphrasing_attack.py \
+    --input "$input_file" \
+    --output_dir "$output_dir" \
+    --field watermarked_text \
+    --model openai/gpt-oss-20b \
+    --gpus "$GPUS" \
+    --reasoning_effort low \
+    --batch_size 4
+
+python paraphrasing_attack.py \
+    --input "$input_file" \
+    --output_dir "$output_dir" \
+    --field watermarked_text \
+    --model google/gemma-4-12B-it \
+    --gpus "$GPUS" \
+    --batch_size 4
+
+
+# python paraphrasing_attack.py \
+#     --input "/home/ssgyejin/contents/spanwm/outputs/qwen_4b/sweet_tau_qwen3-4b_c4_n200.jsonl" \
+#     --output_dir "outputs/qwen_4b/c4/sweet" \
+#     --field watermarked_text \
+#     --model google/gemma-4-12B-it \
+#     --gpus "$GPUS" \
+#     --batch_size 4
+
+# python paraphrasing_attack.py \
+#     --input "/home/ssgyejin/contents/spanwm/outputs/qwen_4b/sweet_tau_qwen3-4b_wmt16_de_en_n200.jsonl" \
+#     --output_dir "outputs/qwen_4b/wm16/sweet" \
+#     --field watermarked_text \
+#     --model google/gemma-4-12B-it \
+#     --gpus "$GPUS" \
+#     --batch_size 4

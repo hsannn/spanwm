@@ -1,0 +1,70 @@
+% Requires \usepackage{booktabs}
+\begin{table}[t]
+\centering
+\caption{Software environment. All experiments were run in a single conda
+environment (\texttt{spanwm}, Python 3.12.13) on Rocky Linux 9.4.}
+\label{tab:environment}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Package & Version \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{Core}} \\
+\quad torch                 & 2.13.0+cu130 \\
+\quad CUDA (torch build)    & 13.0 \\
+\quad cuDNN                 & 9.20.0 \\
+\quad NCCL                  & 2.29.7 \\
+\quad triton                & 3.7.1 \\
+\quad transformers          & 5.14.1 \\
+\quad tokenizers            & 0.22.2 \\
+\quad accelerate            & 1.14.0 \\
+\quad huggingface\_hub      & 1.24.0 \\
+\quad safetensors           & 0.8.0 \\
+\quad compressed-tensors    & 0.17.1 \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textit{Numeric / NLP}} \\
+\quad numpy                 & 2.5.1 \\
+\quad scipy                 & 1.18.0 \\
+\quad scikit-learn          & 1.9.0 \\
+\quad pandas                & 3.0.5 \\
+\quad nltk                  & 3.10.0 \\
+\quad spacy                 & 3.8.14 \\
+\quad en\_core\_web\_sm     & 3.8.0 \\
+\quad textacy               & 0.13.0 \\
+\quad sentence-transformers & 5.6.1 \\
+\quad tiktoken              & 0.13.0 \\
+\quad openai                & 2.48.0 \\
+\quad python-dotenv         & 1.2.2 \\
+\quad translate             & 3.8.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ---------------------------------------------------------------------------
+% Compact side-by-side variant, for a two-column layout.
+% ---------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Software environment (\texttt{spanwm} conda environment, Python 3.12.13).}
+\label{tab:environment-compact}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\multicolumn{2}{@{}l}{\textit{Core}} & \multicolumn{2}{l@{}}{\textit{Numeric / NLP}} \\
+\cmidrule(r){1-2}\cmidrule(l){3-4}
+torch              & 2.13.0+cu130 & numpy                 & 2.5.1   \\
+CUDA               & 13.0         & scipy                 & 1.18.0  \\
+cuDNN              & 9.20.0       & scikit-learn          & 1.9.0   \\
+NCCL               & 2.29.7       & pandas                & 3.0.5   \\
+triton             & 3.7.1        & nltk                  & 3.10.0  \\
+transformers       & 5.14.1       & spacy                 & 3.8.14  \\
+tokenizers         & 0.22.2       & en\_core\_web\_sm     & 3.8.0   \\
+accelerate         & 1.14.0       & textacy               & 0.13.0  \\
+huggingface\_hub   & 1.24.0       & sentence-transformers & 5.6.1   \\
+safetensors        & 0.8.0        & tiktoken              & 0.13.0  \\
+compressed-tensors & 0.17.1       & openai                & 2.48.0  \\
+                   &              & python-dotenv         & 1.2.2   \\
+                   &              & translate             & 3.8.1   \\
+\bottomrule
+\end{tabular}
+\end{table}
