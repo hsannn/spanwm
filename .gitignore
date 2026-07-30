@@ -222,3 +222,8 @@ dataset/
 
 SPANWM_V8_METHOD.md
 _probe_*.py
+# macOS
+.DS_Store
+
+# per-cell configs written by tools/make_cfg.py
+config/generated/
